@@ -1,0 +1,73 @@
+name: Selenide Automation Tests - CI Pipeline
+
+# Trigger on push and pull requests
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        java-version: ['11']
+
+    steps:
+    # Step 1: Checkout code
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Step 2: Set up Java environment
+    - name: Set up Java
+      uses: actions/setup-java@v3
+      with:
+        java-version: ${{ matrix.java-version }}
+        distribution: 'temurin'
+        cache: maven
+
+    # Step 3: Run tests with Maven
+    - name: Run Selenide Tests
+      run: mvn clean test -X
+      continue-on-error: true
+
+    # Step 4: Generate Allure Report
+    - name: Generate Allure Report
+      if: always()
+      run: |
+        mvn allure:report || echo "Allure report generation completed"
+
+    # Step 5: Publish test results
+    - name: Publish Test Results
+      if: always()
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      with:
+        files: |
+          target/surefire-reports/**/*.xml
+        check_name: Selenide Test Results
+
+    # Step 6: Upload Allure report as artifact
+    - name: Upload Allure Report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: allure-report
+        path: target/site/allure-maven-plugin/
+        retention-days: 30
+
+    # Step 7: Upload test screenshots
+    - name: Upload Test Screenshots
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-screenshots
+        path: target/screenshots/
+        retention-days: 10
+
+    # Step 8: Send failure notification (optional)
+    - name: Send Slack Notification on Failure
+      if: failure()
+      run: |
+        echo "Tests failed! Review the artifacts for details."

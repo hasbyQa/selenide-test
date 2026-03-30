@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  selenide-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: selenide-test-container
+    environment:
+      # Browser configuration
+      - SELENIDE_BROWSER=chrome
+      - SELENIDE_HEADLESS=true
+      # Test configuration
+      - SELENIDE_TIMEOUT=10000
+    volumes:
+      # Mount reports directory
+      - ./allure-results:/app/allure-results
+      - ./target:/app/target
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge

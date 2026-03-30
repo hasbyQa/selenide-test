@@ -1,0 +1,26 @@
+allure:
+  # Base URL for test execution
+  baseURL: https://www.saucedemo.com
+  
+  # Selenide configuration
+  selenide:
+    headless: true
+    browser: chrome
+    browserSize: 1920x1080
+    timeout: 10000
+    pageLoadStrategy: eager
+    screenshots: true
+    screenshotOnFailure: true
+    savePageSource: true
+
+  # Allure reporting
+  report:
+    enabled: true
+    language: en
+    resultsDirectory: allure-results
+    reportDirectory: target/site/allure-maven-plugin
+
+  # Browser capabilities
+  capabilities:
+    - chromeHeadless
+    - firefoxHeadless
