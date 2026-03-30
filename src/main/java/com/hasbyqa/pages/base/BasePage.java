@@ -38,7 +38,7 @@ public class BasePage {
     }
 
     @Step("Check if element {locator} is visible")
-    protected boolean isElementVisible(String locator) {
+    public boolean isElementVisible(String locator) {
         try {
             return $(locator).isDisplayed();
         } catch (Exception e) {

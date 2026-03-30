@@ -22,7 +22,6 @@ public class BaseTest {
         Configuration.timeout = 10000; // 10 seconds implicit wait
         Configuration.pageLoadStrategy = "eager";
         Configuration.screenshots = true;
-        Configuration.screenshotOnFailure = true;
         Configuration.savePageSource = true;
 
         // Open the base URL
