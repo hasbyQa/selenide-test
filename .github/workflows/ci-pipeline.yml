@@ -20,11 +20,9 @@ jobs:
         java-version: ['11']
 
     steps:
-      # Step 1: Checkout code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Set up Java environment
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -32,24 +30,36 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      # Step 3: Install Chrome
       - name: Install Chrome
         run: |
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
 
-      # Step 4: Run tests
+      # Tests use continue-on-error so pipeline stays green
+      # even when tests fail — test failures show in report only
       - name: Run Selenide Tests
+        id: run_tests
         run: mvn clean test -Dselenide.headless=true -Dselenide.browser=chrome
         continue-on-error: true
 
-      # Step 5: Generate Allure Report
+      # Capture whether tests passed or failed for notifications
+      - name: Set test status
+        id: test_status
+        run: |
+          if [ "${{ steps.run_tests.outcome }}" == "success" ]; then
+            echo "status=passed" >> $GITHUB_OUTPUT
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+            echo "color=good" >> $GITHUB_OUTPUT
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+            echo "color=danger" >> $GITHUB_OUTPUT
+          fi
+
       - name: Generate Allure Report
         if: always()
-        run: |
-          mvn allure:report || echo "Allure report generation completed"
+        run: mvn allure:report || echo "Allure report generation completed"
 
-      # Step 6: Publish test results
       - name: Publish Test Results
         if: always()
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -57,16 +67,15 @@ jobs:
           files: target/surefire-reports/**/*.xml
           check_name: Selenide Test Results
 
-      # Step 7: Upload Allure report
       - name: Upload Allure Report
         if: always()
+        id: upload_allure
         uses: actions/upload-artifact@v4
         with:
           name: allure-report
           path: target/site/allure-maven-plugin/
           retention-days: 30
 
-      # Step 8: Upload screenshots
       - name: Upload Test Screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,23 +85,61 @@ jobs:
           retention-days: 10
           if-no-files-found: ignore
 
-      # Step 9: Slack notification on failure
-      - name: Slack Notification on Failure
-        if: failure()
+      # SLACK NOTIFICATION
+      - name: Slack Notification
+        if: always()
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
             {
-              "text": "❌ *CI Pipeline FAILED*",
+              "text": "${{ steps.test_status.outputs.emoji }} *Selenide CI — Tests ${{ steps.test_status.outputs.status }}*",
               "attachments": [
                 {
-                  "color": "danger",
+                  "color": "${{ steps.test_status.outputs.color }}",
                   "fields": [
-                    { "title": "Repository", "value": "${{ github.repository }}", "short": true },
-                    { "title": "Branch", "value": "${{ github.ref_name }}", "short": true },
-                    { "title": "Triggered by", "value": "${{ github.actor }}", "short": true },
-                    { "title": "Run URL", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
-                  ]
+                    {
+                      "title": "📁 Repository",
+                      "value": "${{ github.repository }}",
+                      "short": true
+                    },
+                    {
+                      "title": "🌿 Branch",
+                      "value": "${{ github.ref_name }}",
+                      "short": true
+                    },
+                    {
+                      "title": "👤 Triggered by",
+                      "value": "${{ github.actor }}",
+                      "short": true
+                    },
+                    {
+                      "title": "🔢 Run #",
+                      "value": "${{ github.run_number }}",
+                      "short": true
+                    },
+                    {
+                      "title": "📝 Commit Message",
+                      "value": "${{ github.event.head_commit.message }}",
+                      "short": false
+                    },
+                    {
+                      "title": "🔗 Commit SHA",
+                      "value": "${{ github.sha }}",
+                      "short": false
+                    },
+                    {
+                      "title": "🏃 Pipeline Run",
+                      "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                      "short": false
+                    },
+                    {
+                      "title": "📊 Allure Report (download from Artifacts)",
+                      "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts",
+                      "short": false
+                    }
+                  ],
+                  "footer": "Selenide CI • GitHub Actions",
+                  "ts": "${{ github.event.head_commit.timestamp }}"
                 }
               ]
             }
@@ -100,33 +147,9 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-      # Step 10: Slack notification on success
-      - name: Slack Notification on Success
-        if: success()
-        uses: slackapi/slack-github-action@v1.27.0
-        with:
-          payload: |
-            {
-              "text": "✅ *CI Pipeline PASSED*",
-              "attachments": [
-                {
-                  "color": "good",
-                  "fields": [
-                    { "title": "Repository", "value": "${{ github.repository }}", "short": true },
-                    { "title": "Branch", "value": "${{ github.ref_name }}", "short": true },
-                    { "title": "Triggered by", "value": "${{ github.actor }}", "short": true },
-                    { "title": "Run URL", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
-                  ]
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
-
-      # Step 11: Gmail notification on failure
-      - name: Gmail Notification on Failure
-        if: failure()
+      # GMAIL NOTIFICATION
+      - name: Gmail Notification
+        if: always()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -134,40 +157,67 @@ jobs:
           secure: true
           username: ${{ secrets.GMAIL_USERNAME }}
           password: ${{ secrets.GMAIL_PASSWORD }}
-          subject: "❌ CI Pipeline FAILED — ${{ github.repository }} (${{ github.ref_name }})"
+          subject: "${{ steps.test_status.outputs.emoji }} Selenide CI — Tests ${{ steps.test_status.outputs.status }} | ${{ github.repository }} (${{ github.ref_name }}) #${{ github.run_number }}"
           to: ${{ secrets.GMAIL_USERNAME }}
           from: ${{ secrets.GMAIL_USERNAME }}
+          content_type: text/html
           body: |
-            The CI pipeline has FAILED.
+            <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             
-            Repository : ${{ github.repository }}
-            Branch     : ${{ github.ref_name }}
-            Commit     : ${{ github.sha }}
-            Triggered by: ${{ github.actor }}
+              <div style="background-color: ${{ steps.test_status.outputs.status == 'passed' && '#28a745' || '#dc3545' }}; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+                <h1 style="margin:0; font-size: 24px;">
+                  ${{ steps.test_status.outputs.emoji }} Selenide CI Report
+                </h1>
+                <h2 style="margin: 8px 0 0 0; font-size: 18px; font-weight: normal;">
+                  Tests ${{ steps.test_status.outputs.status }}
+                </h2>
+              </div>
             
-            View the run:
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-      # Step 12: Gmail notification on success
-      - name: Gmail Notification on Success
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.GMAIL_USERNAME }}
-          password: ${{ secrets.GMAIL_PASSWORD }}
-          subject: "✅ CI Pipeline PASSED — ${{ github.repository }} (${{ github.ref_name }})"
-          to: ${{ secrets.GMAIL_USERNAME }}
-          from: ${{ secrets.GMAIL_USERNAME }}
-          body: |
-            The CI pipeline has PASSED successfully.
+              <div style="border: 1px solid #ddd; border-top: none; padding: 20px; border-radius: 0 0 8px 8px;">
             
-            Repository : ${{ github.repository }}
-            Branch     : ${{ github.ref_name }}
-            Commit     : ${{ github.sha }}
-            Triggered by: ${{ github.actor }}
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 10px; font-weight: bold; color: #555; width: 40%;">📁 Repository</td>
+                    <td style="padding: 10px;">${{ github.repository }}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 10px; font-weight: bold; color: #555;">🌿 Branch</td>
+                    <td style="padding: 10px;">${{ github.ref_name }}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 10px; font-weight: bold; color: #555;">👤 Triggered by</td>
+                    <td style="padding: 10px;">${{ github.actor }}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 10px; font-weight: bold; color: #555;">🔢 Run Number</td>
+                    <td style="padding: 10px;">#${{ github.run_number }}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 10px; font-weight: bold; color: #555;">📝 Commit</td>
+                    <td style="padding: 10px;">${{ github.event.head_commit.message }}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 10px; font-weight: bold; color: #555;">🔗 SHA</td>
+                    <td style="padding: 10px; font-size: 12px; font-family: monospace;">${{ github.sha }}</td>
+                  </tr>
+                </table>
             
-            View the run:
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                <div style="margin-top: 24px; text-align: center;">
+                  <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                     style="background-color: #0366d6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin: 8px;">
+                    🏃 View Pipeline Run
+                  </a>
+                  <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts"
+                     style="background-color: #6f42c1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin: 8px;">
+                    📊 Download Allure Report
+                  </a>
+                </div>
+            
+                <p style="color: #888; font-size: 12px; text-align: center; margin-top: 24px;">
+                  This is an automated notification from your Selenide CI Pipeline via GitHub Actions.
+                </p>
+              </div>
+            
+            </body>
+            </html>
