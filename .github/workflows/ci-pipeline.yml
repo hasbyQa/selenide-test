@@ -82,6 +82,21 @@ jobs:
         if: always()
         run: mvn allure:report || echo "Allure report generation completed"
 
+      - name: Debug - Find Allure Report
+        if: always()
+        run: |
+          echo "=== Searching for index.html ==="
+          find target -name "index.html" 2>/dev/null || echo "No index.html found"
+          echo ""
+          echo "=== target/site contents ==="
+          ls -la target/site/ 2>/dev/null || echo "target/site does not exist"
+          echo ""
+          echo "=== Full target contents ==="
+          ls -la target/ 2>/dev/null || echo "target does not exist"
+          echo ""
+          echo "=== Allure results ==="
+          ls -la target/allure-results/ 2>/dev/null || echo "No allure-results folder"
+
       - name: Locate and prepare Allure Report
         if: always()
         id: allure_path
@@ -99,11 +114,11 @@ jobs:
             echo "Allure index.html not found, creating fallback"
             mkdir -p target/allure-fallback
             cat > target/allure-fallback/index.html << 'EOF'
-          <html><body style="font-family:Arial;text-align:center;padding:50px">
-          <h2>Allure report generation failed</h2>
-          <p>Please check the pipeline logs for details.</p>
-          </body></html>
-          EOF
+            <html><body style="font-family:Arial;text-align:center;padding:50px">
+            <h2>Allure report generation failed</h2>
+            <p>Please check the pipeline logs for details.</p>
+            </body></html>
+            EOF
             echo "path=target/allure-fallback" >> $GITHUB_OUTPUT
           fi
 
@@ -237,7 +252,6 @@ jobs:
           html_body: |
             <html>
             <body style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
-
               <div style="background-color: ${{ steps.test_status.outputs.header_color }}; color: white; padding: 24px 20px; border-radius: 8px 8px 0 0; text-align: center;">
                 <h1 style="margin:0; font-size: 26px; letter-spacing: 1px;">
                   ${{ steps.test_status.outputs.emoji }} Selenide CI Report
@@ -246,9 +260,7 @@ jobs:
                   Tests ${{ steps.test_status.outputs.status }} — Run #${{ github.run_number }}
                 </p>
               </div>
-
               <div style="background: white; border: 1px solid #ddd; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
-
                 <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">🧪 Test Results Summary</h3>
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                   <tr>
@@ -273,7 +285,6 @@ jobs:
                     </td>
                   </tr>
                 </table>
-
                 <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">📋 Pipeline Details</h3>
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                   <tr style="border-bottom: 1px solid #eee;">
@@ -297,7 +308,6 @@ jobs:
                     <td style="padding: 10px;">${{ github.event.head_commit.message }}</td>
                   </tr>
                 </table>
-
                 <div style="margin-top: 24px; text-align: center;">
                   <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                      style="background-color: #0366d6; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin: 6px;">
@@ -308,11 +318,9 @@ jobs:
                     📊 View Live Allure Report
                   </a>
                 </div>
-
                 <p style="color: #aaa; font-size: 11px; text-align: center; margin-top: 24px; border-top: 1px solid #eee; padding-top: 12px;">
                   Automated notification from Selenide CI Pipeline • GitHub Actions • ${{ github.repository }}
                 </p>
               </div>
-
             </body>
             </html>
