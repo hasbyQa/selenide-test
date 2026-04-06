@@ -1,52 +1,48 @@
 package com.hasbyqa.tests.base;
 
 import com.codeborne.selenide.Configuration;
-import com.codeborne.selenide.Selenide;
-import io.qameta.allure.Step;
+import io.qameta.allure.selenide.AllureSelenide;
+import com.codeborne.selenide.logevents.SelenideLogger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.openqa.selenium.chrome.ChromeOptions;
 
 import static com.codeborne.selenide.Selenide.*;
 
-// Base class for all tests - handles initialization and cleanup
 public class BaseTest {
 
     protected static final String BASE_URL = "https://www.saucedemo.com";
 
     @BeforeEach
     public void setUp() {
-        // Configure Selenide for headless browser execution
-        Configuration.headless = true;
+        // Attach Allure listener - captures screenshots and logs on failure automatically
+        SelenideLogger.addListener("allure", new AllureSelenide()
+                .screenshots(true)
+                .savePageSource(true));
+
         Configuration.browser = "chrome";
         Configuration.browserSize = "1920x1080";
-        Configuration.timeout = 10000; // 10 seconds implicit wait
-        Configuration.pageLoadStrategy = "eager";
-        Configuration.screenshots = true;
-        Configuration.savePageSource = true;
+        Configuration.timeout = 15000;
+        Configuration.pageLoadTimeout = 30000;
+        Configuration.pageLoadStrategy = "normal";
+        Configuration.headless = true;
 
-        // Open the base URL
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--no-sandbox");
+        options.addArguments("--disable-dev-shm-usage");
+        options.addArguments("--disable-gpu");
+        options.addArguments("--disable-extensions");
+        options.addArguments("--window-size=1920,1080");
+        options.addArguments("--remote-allow-origins=*");
+        options.addArguments("--disable-blink-features=AutomationControlled");
+        Configuration.browserCapabilities = options;
+
         open(BASE_URL);
     }
 
     @AfterEach
     public void tearDown() {
-        // Close the browser and clear session
+        SelenideLogger.removeListener("allure");
         closeWebDriver();
-    }
-
-    // Helper method for taking screenshots on failure
-    @Step("Take screenshot for failure")
-    protected void takeScreenshot() {
-        Selenide.screenshot(String.valueOf(System.currentTimeMillis()));
-    }
-
-    // Helper method for setting headless mode
-    protected void setHeadless(boolean headless) {
-        Configuration.headless = headless;
-    }
-
-    // Helper method for setting browser
-    protected void setBrowser(String browserName) {
-        Configuration.browser = browserName;
     }
 }
