@@ -21,6 +21,16 @@ jobs:
       matrix:
         java-version: ['11']
 
+    outputs:
+      test_status: ${{ steps.test_status.outputs.status }}
+      test_emoji: ${{ steps.test_status.outputs.emoji }}
+      test_color: ${{ steps.test_status.outputs.color }}
+      header_color: ${{ steps.test_status.outputs.header_color }}
+      total_tests: ${{ steps.parse_results.outputs.total }}
+      passed_tests: ${{ steps.parse_results.outputs.passed }}
+      failed_tests: ${{ steps.parse_results.outputs.failed }}
+      skipped_tests: ${{ steps.parse_results.outputs.skipped }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,192 +56,280 @@ jobs:
         id: test_status
         run: |
           if [ "${{ steps.run_tests.outcome }}" == "success" ]; then
-            echo "status=passed" >> $GITHUB_OUTPUT
+            echo "status=PASSED ✅" >> $GITHUB_OUTPUT
             echo "emoji=✅" >> $GITHUB_OUTPUT
             echo "color=good" >> $GITHUB_OUTPUT
             echo "header_color=#28a745" >> $GITHUB_OUTPUT
           else
-            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "status=FAILED ❌" >> $GITHUB_OUTPUT
             echo "emoji=❌" >> $GITHUB_OUTPUT
             echo "color=danger" >> $GITHUB_OUTPUT
             echo "header_color=#dc3545" >> $GITHUB_OUTPUT
           fi
 
+      # Parse surefire XML to extract test counts
+      - name: Parse test results
+        id: parse_results
+        if: always()
+        run: |
+          TOTAL=0; PASSED=0; FAILED=0; SKIPPED=0
+          for f in target/surefire-reports/TEST-*.xml; do
+            [ -f "$f" ] || continue
+            t=$(grep -oP 'tests="\K[0-9]+' "$f" | head -1)
+            fa=$(grep -oP 'failures="\K[0-9]+' "$f" | head -1)
+            e=$(grep -oP 'errors="\K[0-9]+' "$f" | head -1)
+            s=$(grep -oP 'skipped="\K[0-9]+' "$f" | head -1)
+            TOTAL=$((TOTAL + ${t:-0}))
+            FAILED=$((FAILED + ${fa:-0} + ${e:-0}))
+            SKIPPED=$((SKIPPED + ${s:-0}))
+          done
+          PASSED=$((TOTAL - FAILED - SKIPPED))
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
+
       - name: Generate Allure Report
         if: always()
         run: mvn allure:report || echo "Allure report generation completed"
 
-      # Deploy Allure Report to GitHub Pages
-      - name: Setup Pages
+      # Find the actual Allure report path and ensure index.html exists
+      - name: Locate and prepare Allure Report
         if: always()
-        uses: actions/configure-pages@v4
+        id: allure_path
+        run: |
+          if [ -f "target/site/allure-maven-plugin/index.html" ]; then
+            echo "path=target/site/allure-maven-plugin" >> $GITHUB_OUTPUT
+            echo "Found at target/site/allure-maven-plugin"
+          elif [ -f "target/site/allure-report/index.html" ]; then
+            echo "path=target/site/allure-report" >> $GITHUB_OUTPUT
+            echo "Found at target/site/allure-report"
+          elif [ -f "target/allure-report/index.html" ]; then
+            echo "path=target/allure-report" >> $GITHUB_OUTPUT
+            echo "Found at target/allure-report"
+          else
+            echo "Allure index.html not found, creating fallback"
+            mkdir -p target/allure-fallback
+            cat > target/allure-fallback/index.html << 'EOF'
+            <html><body style="font-family:Arial;text-align:center;padding:50px">
+            <h2>Allure report generation failed</h2>
+            <p>Please check the pipeline logs for details.</p>
+            </body></html>
+  EOF
+  echo "path=target/allure-fallback" >> $GITHUB_OUTPUT
+  fi
 
-      - name: Upload Pages artifact
-        if: always()
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: target/site/allure-maven-plugin/
+- name: Setup Pages
+  if: always()
+  uses: actions/configure-pages@v4
 
-      - name: Deploy to GitHub Pages
-        if: always()
-        id: deployment
-        uses: actions/deploy-pages@v4
+- name: Upload Pages artifact
+  if: always()
+  uses: actions/upload-pages-artifact@v3
+  with:
+    path: ${{ steps.allure_path.outputs.path }}
 
-      - name: Publish Test Results
-        if: always()
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: target/surefire-reports/**/*.xml
-          check_name: Selenide Test Results
+- name: Deploy to GitHub Pages
+  if: always()
+  id: deployment
+  uses: actions/deploy-pages@v4
 
-      - name: Upload Allure Report Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-report
-          path: target/site/allure-maven-plugin/
-          retention-days: 30
+- name: Publish Test Results
+  if: always()
+  uses: EnricoMi/publish-unit-test-result-action@v2
+  with:
+    files: target/surefire-reports/**/*.xml
+    check_name: Selenide Test Results
 
-      - name: Upload Test Screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-screenshots
-          path: target/screenshots/
-          retention-days: 10
-          if-no-files-found: ignore
+- name: Upload Allure Report Artifact
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: allure-report
+    path: ${{ steps.allure_path.outputs.path }}
+    retention-days: 30
 
-      #  SLACK NOTIFICATION
-      - name: Slack Notification
-        if: always()
-        uses: slackapi/slack-github-action@v1.27.0
-        with:
-          payload: |
-            {
-              "text": "${{ steps.test_status.outputs.emoji }} *Selenide CI — Tests ${{ steps.test_status.outputs.status }}*",
-              "attachments": [
-                {
-                  "color": "${{ steps.test_status.outputs.color }}",
-                  "fields": [
-                    {
-                      "title": "📁 Repository",
-                      "value": "${{ github.repository }}",
-                      "short": true
-                    },
-                    {
-                      "title": "🌿 Branch",
-                      "value": "${{ github.ref_name }}",
-                      "short": true
-                    },
-                    {
-                      "title": "👤 Triggered by",
-                      "value": "${{ github.actor }}",
-                      "short": true
-                    },
-                    {
-                      "title": "🔢 Run #",
-                      "value": "${{ github.run_number }}",
-                      "short": true
-                    },
-                    {
-                      "title": "📝 Commit Message",
-                      "value": "${{ github.event.head_commit.message }}",
-                      "short": false
-                    },
-                    {
-                      "title": "🔗 Commit SHA",
-                      "value": "${{ github.sha }}",
-                      "short": false
-                    },
-                    {
-                      "title": "🏃 Pipeline Run",
-                      "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                      "short": false
-                    },
-                    {
-                      "title": "📊 Live Allure Report",
-                      "value": "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/",
-                      "short": false
-                    }
-                  ],
-                  "footer": "Selenide CI • GitHub Actions",
-                  "footer_icon": "https://github.githubassets.com/favicons/favicon.png"
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+- name: Upload Test Screenshots
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: test-screenshots
+    path: target/screenshots/
+    retention-days: 10
+    if-no-files-found: ignore
 
-      # GMAIL NOTIFICATION
-      - name: Gmail Notification
-        if: always()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.GMAIL_USERNAME }}
-          password: ${{ secrets.GMAIL_PASSWORD }}
-          subject: "${{ steps.test_status.outputs.emoji }} Selenide CI — Tests ${{ steps.test_status.outputs.status }} | ${{ github.repository }} #${{ github.run_number }}"
-          to: ${{ secrets.GMAIL_USERNAME }}
-          from: ${{ secrets.GMAIL_USERNAME }}
-          html_body: |
-            <html>
-            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            
-              <div style="background-color: ${{ steps.test_status.outputs.header_color }}; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-                <h1 style="margin:0; font-size: 24px;">
-                  ${{ steps.test_status.outputs.emoji }} Selenide CI Report
-                </h1>
-                <h2 style="margin: 8px 0 0 0; font-size: 18px; font-weight: normal;">
-                  Tests ${{ steps.test_status.outputs.status }}
-                </h2>
-              </div>
-            
-              <div style="border: 1px solid #ddd; border-top: none; padding: 20px; border-radius: 0 0 8px 8px;">
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr style="border-bottom: 1px solid #eee;">
-                    <td style="padding: 10px; font-weight: bold; color: #555; width: 40%;">📁 Repository</td>
-                    <td style="padding: 10px;">${{ github.repository }}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid #eee;">
-                    <td style="padding: 10px; font-weight: bold; color: #555;">🌿 Branch</td>
-                    <td style="padding: 10px;">${{ github.ref_name }}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid #eee;">
-                    <td style="padding: 10px; font-weight: bold; color: #555;">👤 Triggered by</td>
-                    <td style="padding: 10px;">${{ github.actor }}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid #eee;">
-                    <td style="padding: 10px; font-weight: bold; color: #555;">🔢 Run Number</td>
-                    <td style="padding: 10px;">#${{ github.run_number }}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid #eee;">
-                    <td style="padding: 10px; font-weight: bold; color: #555;">📝 Commit</td>
-                    <td style="padding: 10px;">${{ github.event.head_commit.message }}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid #eee;">
-                    <td style="padding: 10px; font-weight: bold; color: #555;">🔗 SHA</td>
-                    <td style="padding: 10px; font-size: 12px; font-family: monospace;">${{ github.sha }}</td>
-                  </tr>
-                </table>
-            
-                <div style="margin-top: 24px; text-align: center;">
-                  <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                     style="background-color: #0366d6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin: 8px;">
-                    🏃 View Pipeline Run
-                  </a>
-                  <a href="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
-                     style="background-color: #6f42c1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin: 8px;">
-                    📊 View Live Allure Report
-                  </a>
-                </div>
-            
-                <p style="color: #888; font-size: 12px; text-align: center; margin-top: 24px;">
-                  Automated notification from Selenide CI Pipeline • GitHub Actions
-                </p>
-              </div>
-            
-            </body>
-            </html>
+# SLACK NOTIFICATION
+- name: Slack Notification
+  if: always()
+  uses: slackapi/slack-github-action@v1.27.0
+  with:
+    payload: |
+      {
+        "text": "${{ steps.test_status.outputs.emoji }} *Selenide CI — Tests ${{ steps.test_status.outputs.status }}*",
+        "attachments": [
+          {
+            "color": "${{ steps.test_status.outputs.color }}",
+            "fields": [
+              {
+                "title": "📁 Repository",
+                "value": "${{ github.repository }}",
+                "short": true
+              },
+              {
+                "title": "🌿 Branch",
+                "value": "${{ github.ref_name }}",
+                "short": true
+              },
+              {
+                "title": "👤 Triggered by",
+                "value": "${{ github.actor }}",
+                "short": true
+              },
+              {
+                "title": "🔢 Run #",
+                "value": "${{ github.run_number }}",
+                "short": true
+              },
+              {
+                "title": "✅ Passed",
+                "value": "${{ steps.parse_results.outputs.passed }}",
+                "short": true
+              },
+              {
+                "title": "❌ Failed",
+                "value": "${{ steps.parse_results.outputs.failed }}",
+                "short": true
+              },
+              {
+                "title": "⏭️ Skipped",
+                "value": "${{ steps.parse_results.outputs.skipped }}",
+                "short": true
+              },
+              {
+                "title": "🧪 Total Tests",
+                "value": "${{ steps.parse_results.outputs.total }}",
+                "short": true
+              },
+              {
+                "title": "📝 Commit Message",
+                "value": "${{ github.event.head_commit.message }}",
+                "short": false
+              },
+              {
+                "title": "🏃 Pipeline Run",
+                "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "short": false
+              },
+              {
+                "title": "📊 Live Allure Report",
+                "value": "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/",
+                "short": false
+              }
+            ],
+            "footer": "Selenide CI • GitHub Actions",
+            "footer_icon": "https://github.githubassets.com/favicons/favicon.png"
+          }
+        ]
+      }
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+# GMAIL NOTIFICATION
+- name: Gmail Notification
+  if: always()
+  uses: dawidd6/action-send-mail@v3
+  with:
+    server_address: smtp.gmail.com
+    server_port: 465
+    secure: true
+    username: ${{ secrets.GMAIL_USERNAME }}
+    password: ${{ secrets.GMAIL_PASSWORD }}
+    subject: "${{ steps.test_status.outputs.emoji }} Selenide CI — Tests ${{ steps.test_status.outputs.status }} | Run #${{ github.run_number }} | ${{ github.repository }}"
+    to: ${{ secrets.GMAIL_USERNAME }}
+    from: ${{ secrets.GMAIL_USERNAME }}
+    html_body: |
+      <html>
+      <body style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
+      
+        <div style="background-color: ${{ steps.test_status.outputs.header_color }}; color: white; padding: 24px 20px; border-radius: 8px 8px 0 0; text-align: center;">
+          <h1 style="margin:0; font-size: 26px; letter-spacing: 1px;">
+            ${{ steps.test_status.outputs.emoji }} Selenide CI Report
+          </h1>
+          <p style="margin: 8px 0 0 0; font-size: 16px; opacity: 0.9;">
+            Tests ${{ steps.test_status.outputs.status }} — Run #${{ github.run_number }}
+          </p>
+        </div>
+      
+        <div style="background: white; border: 1px solid #ddd; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
+      
+          <!-- Test Results Summary -->
+          <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">🧪 Test Results Summary</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <tr>
+              <td style="padding: 10px; text-align: center; background: #e8f5e9; border-radius: 6px; width: 25%;">
+                <div style="font-size: 22px; font-weight: bold; color: #28a745;">${{ steps.parse_results.outputs.passed }}</div>
+                <div style="font-size: 12px; color: #555;">✅ Passed</div>
+              </td>
+              <td style="width: 4%;"></td>
+              <td style="padding: 10px; text-align: center; background: #fdecea; border-radius: 6px; width: 25%;">
+                <div style="font-size: 22px; font-weight: bold; color: #dc3545;">${{ steps.parse_results.outputs.failed }}</div>
+                <div style="font-size: 12px; color: #555;">❌ Failed</div>
+              </td>
+              <td style="width: 4%;"></td>
+              <td style="padding: 10px; text-align: center; background: #fff8e1; border-radius: 6px; width: 25%;">
+                <div style="font-size: 22px; font-weight: bold; color: #f0ad4e;">${{ steps.parse_results.outputs.skipped }}</div>
+                <div style="font-size: 12px; color: #555;">⏭️ Skipped</div>
+              </td>
+              <td style="width: 4%;"></td>
+              <td style="padding: 10px; text-align: center; background: #e3f2fd; border-radius: 6px; width: 25%;">
+                <div style="font-size: 22px; font-weight: bold; color: #0366d6;">${{ steps.parse_results.outputs.total }}</div>
+                <div style="font-size: 12px; color: #555;">🧪 Total</div>
+              </td>
+            </tr>
+          </table>
+      
+          <!-- Pipeline Details -->
+          <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">📋 Pipeline Details</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 10px; font-weight: bold; color: #555; width: 40%;">📁 Repository</td>
+              <td style="padding: 10px;">${{ github.repository }}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 10px; font-weight: bold; color: #555;">🌿 Branch</td>
+              <td style="padding: 10px;">${{ github.ref_name }}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 10px; font-weight: bold; color: #555;">👤 Triggered by</td>
+              <td style="padding: 10px;">${{ github.actor }}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 10px; font-weight: bold; color: #555;">🔢 Run Number</td>
+              <td style="padding: 10px;">#${{ github.run_number }}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 10px; font-weight: bold; color: #555;">📝 Commit</td>
+              <td style="padding: 10px;">${{ github.event.head_commit.message }}</td>
+            </tr>
+          </table>
+      
+          <!-- Action Buttons -->
+          <div style="margin-top: 24px; text-align: center;">
+            <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+               style="background-color: #0366d6; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin: 6px;">
+              🏃 View Pipeline Run
+            </a>
+            <a href="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+               style="background-color: #6f42c1; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin: 6px;">
+              📊 View Live Allure Report
+            </a>
+          </div>
+      
+          <p style="color: #aaa; font-size: 11px; text-align: center; margin-top: 24px; border-top: 1px solid #eee; padding-top: 12px;">
+            Automated notification from Selenide CI Pipeline • GitHub Actions • ${{ github.repository }}
+          </p>
+        </div>
+      
+      </body>
+      </html>
