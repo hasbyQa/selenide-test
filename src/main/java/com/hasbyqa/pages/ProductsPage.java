@@ -38,23 +38,25 @@ public class ProductsPage extends BasePage {
 
     @Step("Get first product name")
     public String getFirstProductName() {
-        return getText(".inventory_item:first-child " + PRODUCT_NAME);
+        return $$(PRODUCT_ITEM).first().$(".inventory_item_name").getText();
     }
 
     @Step("Get product price by index {index}")
     public String getProductPriceByIndex(int index) {
-        return getText(".inventory_item:nth-child(" + index + ") " + PRODUCT_PRICE);
+        // index is 1-based
+        return $$(PRODUCT_ITEM).get(index - 1).$(PRODUCT_PRICE).getText();
     }
 
     @Step("Click add to cart button for first product")
     public ProductsPage addFirstProductToCart() {
-        $(".inventory_item:first-child " + ADD_TO_CART_BUTTON).click();
+        $$(ADD_TO_CART_BUTTON).first().shouldBe(visible).click();
         return this;
     }
 
     @Step("Click add to cart button for product at index {index}")
     public ProductsPage addProductToCartByIndex(int index) {
-        $(".inventory_item:nth-child(" + index + ") " + ADD_TO_CART_BUTTON).click();
+        // index is 1-based — get add-to-cart button from the specific inventory item
+        $$(PRODUCT_ITEM).get(index - 1).$(ADD_TO_CART_BUTTON).shouldBe(visible).click();
         return this;
     }
 
@@ -69,7 +71,7 @@ public class ProductsPage extends BasePage {
 
     @Step("Click on cart link")
     public void clickCartLink() {
-        $(CART_LINK).click();
+        $(CART_LINK).shouldBe(visible).click();
     }
 
     @Step("Click on product name {productName}")
