@@ -66,7 +66,7 @@ jobs:
           path: target/site/allure-maven-plugin/
           retention-days: 30
 
-      # Step 8: Upload screenshots (only if any exist)
+      # Step 8: Upload screenshots
       - name: Upload Test Screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,7 +76,98 @@ jobs:
           retention-days: 10
           if-no-files-found: ignore
 
-      # Step 9: Notify on failure
-      - name: Notify on Failure
+      # Step 9: Slack notification on failure
+      - name: Slack Notification on Failure
         if: failure()
-        run: echo "Tests failed! Review the artifacts for details."
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ *CI Pipeline FAILED*",
+              "attachments": [
+                {
+                  "color": "danger",
+                  "fields": [
+                    { "title": "Repository", "value": "${{ github.repository }}", "short": true },
+                    { "title": "Branch", "value": "${{ github.ref_name }}", "short": true },
+                    { "title": "Triggered by", "value": "${{ github.actor }}", "short": true },
+                    { "title": "Run URL", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      # Step 10: Slack notification on success
+      - name: Slack Notification on Success
+        if: success()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "✅ *CI Pipeline PASSED*",
+              "attachments": [
+                {
+                  "color": "good",
+                  "fields": [
+                    { "title": "Repository", "value": "${{ github.repository }}", "short": true },
+                    { "title": "Branch", "value": "${{ github.ref_name }}", "short": true },
+                    { "title": "Triggered by", "value": "${{ github.actor }}", "short": true },
+                    { "title": "Run URL", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      # Step 11: Gmail notification on failure
+      - name: Gmail Notification on Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          subject: "❌ CI Pipeline FAILED — ${{ github.repository }} (${{ github.ref_name }})"
+          to: ${{ secrets.GMAIL_USERNAME }}
+          from: ${{ secrets.GMAIL_USERNAME }}
+          body: |
+            The CI pipeline has FAILED.
+            
+            Repository : ${{ github.repository }}
+            Branch     : ${{ github.ref_name }}
+            Commit     : ${{ github.sha }}
+            Triggered by: ${{ github.actor }}
+            
+            View the run:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      # Step 12: Gmail notification on success
+      - name: Gmail Notification on Success
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          subject: "✅ CI Pipeline PASSED — ${{ github.repository }} (${{ github.ref_name }})"
+          to: ${{ secrets.GMAIL_USERNAME }}
+          from: ${{ secrets.GMAIL_USERNAME }}
+          body: |
+            The CI pipeline has PASSED successfully.
+            
+            Repository : ${{ github.repository }}
+            Branch     : ${{ github.ref_name }}
+            Commit     : ${{ github.sha }}
+            Triggered by: ${{ github.actor }}
+            
+            View the run:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
