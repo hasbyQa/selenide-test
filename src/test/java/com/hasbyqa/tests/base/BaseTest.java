@@ -1,8 +1,6 @@
 package com.hasbyqa.tests.base;
 
 import com.codeborne.selenide.Configuration;
-import io.qameta.allure.selenide.AllureSelenide;
-import com.codeborne.selenide.logevents.SelenideLogger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -15,16 +13,13 @@ public class BaseTest {
 
     @BeforeEach
     public void setUp() {
-        // Attach Allure listener - captures screenshots and logs on failure automatically
-        SelenideLogger.addListener("allure", new AllureSelenide()
-                .screenshots(true)
-                .savePageSource(true));
-
         Configuration.browser = "chrome";
         Configuration.browserSize = "1920x1080";
         Configuration.timeout = 15000;
         Configuration.pageLoadTimeout = 30000;
         Configuration.pageLoadStrategy = "normal";
+        Configuration.screenshots = true;
+        Configuration.savePageSource = true;
         Configuration.headless = true;
 
         ChromeOptions options = new ChromeOptions();
@@ -42,7 +37,6 @@ public class BaseTest {
 
     @AfterEach
     public void tearDown() {
-        SelenideLogger.removeListener("allure");
         closeWebDriver();
     }
 }
