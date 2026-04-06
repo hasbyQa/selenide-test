@@ -6,11 +6,11 @@ import io.qameta.allure.Step;
 import static com.codeborne.selenide.Condition.visible;
 import static com.codeborne.selenide.Selenide.$;
 import static com.codeborne.selenide.Selenide.$$;
+import static com.codeborne.selenide.WebDriverConditions.urlContaining;
+import static com.codeborne.selenide.Selenide.webdriver;
 
-// Products (Inventory) Page Object
 public class ProductsPage extends BasePage {
 
-    // Locators
     private static final String PAGE_TITLE = ".title";
     private static final String PRODUCTS_LIST = ".inventory_list";
     private static final String PRODUCT_ITEM = ".inventory_item";
@@ -25,6 +25,7 @@ public class ProductsPage extends BasePage {
     @Step("Verify products page is loaded")
     @Override
     public ProductsPage verifyPageLoaded() {
+        webdriver().shouldHave(urlContaining("inventory"));
         $(PAGE_TITLE).shouldBe(visible);
         $(PRODUCTS_LIST).shouldBe(visible);
         return this;

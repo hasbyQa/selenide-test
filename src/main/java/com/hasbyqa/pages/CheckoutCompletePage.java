@@ -5,11 +5,11 @@ import io.qameta.allure.Step;
 
 import static com.codeborne.selenide.Condition.visible;
 import static com.codeborne.selenide.Selenide.$;
+import static com.codeborne.selenide.WebDriverConditions.urlContaining;
+import static com.codeborne.selenide.Selenide.webdriver;
 
-// Order Completion Page Object
 public class CheckoutCompletePage extends BasePage {
 
-    // Locators
     private static final String SUCCESS_MESSAGE = ".complete-header";
     private static final String ORDER_NUMBER = ".complete-text";
     private static final String BACK_HOME_BUTTON = "[data-test='back-to-products']";
@@ -17,6 +17,7 @@ public class CheckoutCompletePage extends BasePage {
     @Step("Verify order completion page is loaded")
     @Override
     public CheckoutCompletePage verifyPageLoaded() {
+        webdriver().shouldHave(urlContaining("checkout-complete"));
         $(SUCCESS_MESSAGE).shouldBe(visible);
         return this;
     }
