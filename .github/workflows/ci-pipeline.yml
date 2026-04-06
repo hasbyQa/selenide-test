@@ -10,6 +10,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: write
+
     strategy:
       matrix:
         java-version: ['11']
@@ -27,32 +32,32 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      # Step 3: Run tests with Maven (headless Chrome)
+      # Step 3: Install Chrome
       - name: Install Chrome
         run: |
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
 
+      # Step 4: Run tests
       - name: Run Selenide Tests
         run: mvn clean test -Dselenide.headless=true -Dselenide.browser=chrome
         continue-on-error: true
 
-      # Step 4: Generate Allure Report
+      # Step 5: Generate Allure Report
       - name: Generate Allure Report
         if: always()
         run: |
           mvn allure:report || echo "Allure report generation completed"
 
-      # Step 5: Publish test results
+      # Step 6: Publish test results
       - name: Publish Test Results
         if: always()
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
-          files: |
-            target/surefire-reports/**/*.xml
+          files: target/surefire-reports/**/*.xml
           check_name: Selenide Test Results
 
-      # Step 6: Upload Allure report as artifact
+      # Step 7: Upload Allure report
       - name: Upload Allure Report
         if: always()
         uses: actions/upload-artifact@v4
@@ -61,7 +66,7 @@ jobs:
           path: target/site/allure-maven-plugin/
           retention-days: 30
 
-      # Step 7: Upload test screenshots
+      # Step 8: Upload screenshots (only if any exist)
       - name: Upload Test Screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -69,9 +74,9 @@ jobs:
           name: test-screenshots
           path: target/screenshots/
           retention-days: 10
+          if-no-files-found: ignore
 
-      # Step 8: Notify on failure
+      # Step 9: Notify on failure
       - name: Notify on Failure
         if: failure()
-        run: |
-          echo "Tests failed! Review the artifacts for details."
+        run: echo "Tests failed! Review the artifacts for details."
