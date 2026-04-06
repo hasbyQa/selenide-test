@@ -18,6 +18,8 @@
         <selenide.version>6.17.0</selenide.version>
         <junit.version>5.9.3</junit.version>
         <allure.version>2.22.1</allure.version>
+        <allure.maven.version>2.12.0</allure.maven.version>
+        <aspectj.version>1.9.20.1</aspectj.version>
         <webdrivermanager.version>5.6.3</webdrivermanager.version>
     </properties>
 
@@ -62,6 +64,14 @@
             <version>${allure.version}</version>
         </dependency>
 
+        <!-- AspectJ - required for Allure annotations to work -->
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
+            <version>${aspectj.version}</version>
+            <scope>test</scope>
+        </dependency>
+
         <!-- WebDriver Manager -->
         <dependency>
             <groupId>io.github.bonigarcia</groupId>
@@ -69,7 +79,7 @@
             <version>${webdrivermanager.version}</version>
         </dependency>
 
-        <!-- Lombok (optional, for reducing boilerplate) -->
+        <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -91,7 +101,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Maven Surefire Plugin for Test Execution -->
+            <!-- Maven Surefire Plugin - with Allure Java Agent -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -101,6 +111,12 @@
                         <include>**/*Test.java</include>
                         <include>**/*Tests.java</include>
                     </includes>
+                    <argLine>
+                        -javaagent:"${settings.localRepository}/org/aspectj/aspectjweaver/${aspectj.version}/aspectjweaver-${aspectj.version}.jar"
+                    </argLine>
+                    <systemPropertyVariables>
+                        <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
 
@@ -108,9 +124,11 @@
             <plugin>
                 <groupId>io.qameta.allure</groupId>
                 <artifactId>allure-maven</artifactId>
-                <version>2.12.0</version>
+                <version>${allure.maven.version}</version>
                 <configuration>
                     <reportVersion>${allure.version}</reportVersion>
+                    <resultsDirectory>${project.build.directory}/allure-results</resultsDirectory>
+                    <reportDirectory>${project.build.directory}/site/allure-maven-plugin</reportDirectory>
                 </configuration>
             </plugin>
         </plugins>

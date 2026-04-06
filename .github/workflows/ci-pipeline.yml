@@ -87,13 +87,8 @@ jobs:
         run: |
           echo "=== Searching for index.html ==="
           find target -name "index.html" 2>/dev/null || echo "No index.html found"
-          echo ""
-          echo "=== target/site contents ==="
-          ls -la target/site/ 2>/dev/null || echo "target/site does not exist"
-          echo ""
-          echo "=== Full target contents ==="
-          ls -la target/ 2>/dev/null || echo "target does not exist"
-          echo ""
+          echo "=== target/site/allure-maven-plugin contents ==="
+          ls -la target/site/allure-maven-plugin/ 2>/dev/null || echo "folder empty or missing"
           echo "=== Allure results ==="
           ls -la target/allure-results/ 2>/dev/null || echo "No allure-results folder"
 
@@ -113,12 +108,14 @@ jobs:
           else
             echo "Allure index.html not found, creating fallback"
             mkdir -p target/allure-fallback
-            cat > target/allure-fallback/index.html << 'EOF'
-            <html><body style="font-family:Arial;text-align:center;padding:50px">
-            <h2>Allure report generation failed</h2>
-            <p>Please check the pipeline logs for details.</p>
-            </body></html>
-            EOF
+            python3 -c "
+          content = '''<html><body style=\"font-family:Arial;text-align:center;padding:50px\">
+          <h2>Allure report generation failed</h2>
+          <p>Please check the pipeline logs for details.</p>
+          </body></html>'''
+          with open('target/allure-fallback/index.html', 'w') as f:
+              f.write(content)
+          "
             echo "path=target/allure-fallback" >> $GITHUB_OUTPUT
           fi
 
