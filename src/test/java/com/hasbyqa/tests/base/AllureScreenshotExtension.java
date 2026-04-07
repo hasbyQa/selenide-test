@@ -2,38 +2,37 @@ package com.hasbyqa.tests.base;
 
 import com.codeborne.selenide.WebDriverRunner;
 import io.qameta.allure.Allure;
+import io.qameta.allure.AllureLifecycle;
+import io.qameta.allure.model.Status;
+import io.qameta.allure.model.StatusDetails;
+import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.api.extension.TestWatcher;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.TakesScreenshot;
 
 import java.io.ByteArrayInputStream;
-import java.util.Optional;
 
-public class AllureScreenshotExtension implements TestWatcher {
+// Takes and attaches screenshot to Allure after every test (pass or fail)
+public class AllureScreenshotExtension implements AfterEachCallback {
 
     @Override
-    public void testFailed(ExtensionContext context, Throwable cause) {
+    public void afterEach(ExtensionContext context) {
         try {
-            var driver = WebDriverRunner.getWebDriver();
-            byte[] screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
-            Allure.addAttachment(
-                    "Screenshot - " + context.getDisplayName(),
-                    "image/png",
-                    new ByteArrayInputStream(screenshot),
-                    "png"
-            );
-        } catch (Exception e) {
-            // Browser may already be closed
+            if (WebDriverRunner.hasWebDriverStarted()) {
+                var driver = WebDriverRunner.getWebDriver();
+                byte[] screenshot = ((TakesScreenshot) driver)
+                        .getScreenshotAs(OutputType.BYTES);
+                String label = context.getTestMethod()
+                        .map(m -> m.getName())
+                        .orElse("screenshot");
+                Allure.addAttachment(
+                        label,
+                        "image/png",
+                        new ByteArrayInputStream(screenshot),
+                        "png"
+                );
+            }
+        } catch (Exception ignored) {
         }
     }
-
-    @Override
-    public void testSuccessful(ExtensionContext context) {}
-
-    @Override
-    public void testAborted(ExtensionContext context, Throwable cause) {}
-
-    @Override
-    public void testDisabled(ExtensionContext context, Optional<String> reason) {}
 }

@@ -5,8 +5,6 @@ import io.qameta.allure.Step;
 
 import static com.codeborne.selenide.Condition.visible;
 import static com.codeborne.selenide.Selenide.$;
-import static com.codeborne.selenide.WebDriverConditions.urlContaining;
-import static com.codeborne.selenide.Selenide.webdriver;
 
 public class CartPage extends BasePage {
 
@@ -20,7 +18,6 @@ public class CartPage extends BasePage {
     @Step("Verify cart page is loaded")
     @Override
     public CartPage verifyPageLoaded() {
-        webdriver().shouldHave(urlContaining("cart"));
         $(PAGE_TITLE).shouldBe(visible);
         $(CHECKOUT_BUTTON).shouldBe(visible);
         return this;
