@@ -3,10 +3,11 @@ package com.hasbyqa.pages;
 import com.hasbyqa.pages.base.BasePage;
 import io.qameta.allure.Step;
 
-import static com.codeborne.selenide.Condition.visible;
 import static com.codeborne.selenide.Condition.exist;
+import static com.codeborne.selenide.Condition.visible;
 import static com.codeborne.selenide.Selenide.$;
 import static com.codeborne.selenide.Selenide.$$;
+import static com.codeborne.selenide.Selenide.executeJavaScript;
 import static com.codeborne.selenide.WebDriverConditions.urlContaining;
 import static com.codeborne.selenide.Selenide.webdriver;
 
@@ -49,20 +50,21 @@ public class ProductsPage extends BasePage {
 
     @Step("Click add to cart button for first product")
     public ProductsPage addFirstProductToCart() {
-        $$(ADD_TO_CART_BUTTON).first().shouldBe(visible).click();
+        var btn = $$(ADD_TO_CART_BUTTON).first().shouldBe(visible);
+        executeJavaScript("arguments[0].click();", btn.getWrappedElement());
         return this;
     }
 
     @Step("Click add to cart button for product at index {index}")
     public ProductsPage addProductToCartByIndex(int index) {
-        $$(PRODUCT_ITEM).get(index - 1).$(ADD_TO_CART_BUTTON).shouldBe(visible).click();
+        var btn = $$(PRODUCT_ITEM).get(index - 1).$(ADD_TO_CART_BUTTON).shouldBe(visible);
+        executeJavaScript("arguments[0].click();", btn.getWrappedElement());
         return this;
     }
 
     @Step("Get cart items count")
     public int getCartItemsCount() {
         try {
-            // Wait for badge to exist before reading it
             $(CART_BADGE).shouldBe(exist);
             return Integer.parseInt($(CART_BADGE).getText());
         } catch (Exception e) {
@@ -72,7 +74,8 @@ public class ProductsPage extends BasePage {
 
     @Step("Click on cart link")
     public void clickCartLink() {
-        $(CART_LINK).shouldBe(visible).click();
+        var link = $(CART_LINK).shouldBe(visible);
+        executeJavaScript("arguments[0].click();", link.getWrappedElement());
         webdriver().shouldHave(urlContaining("cart"));
     }
 
