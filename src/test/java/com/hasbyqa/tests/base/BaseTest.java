@@ -3,10 +3,12 @@ package com.hasbyqa.tests.base;
 import com.codeborne.selenide.Configuration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.openqa.selenium.chrome.ChromeOptions;
 
 import static com.codeborne.selenide.Selenide.*;
 
+@ExtendWith(AllureScreenshotExtension.class)
 public class BaseTest {
 
     protected static final String BASE_URL = "https://www.saucedemo.com";
@@ -22,7 +24,7 @@ public class BaseTest {
         Configuration.savePageSource = true;
 
         ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless=new"); // new headless mode - better keyboard support
+        options.addArguments("--headless=new");
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--disable-gpu");
