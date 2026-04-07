@@ -4,6 +4,7 @@ import com.hasbyqa.pages.base.BasePage;
 import io.qameta.allure.Step;
 
 import static com.codeborne.selenide.Condition.visible;
+import static com.codeborne.selenide.Condition.exist;
 import static com.codeborne.selenide.Selenide.$;
 import static com.codeborne.selenide.Selenide.$$;
 import static com.codeborne.selenide.WebDriverConditions.urlContaining;
@@ -61,6 +62,8 @@ public class ProductsPage extends BasePage {
     @Step("Get cart items count")
     public int getCartItemsCount() {
         try {
+            // Wait for badge to exist before reading it
+            $(CART_BADGE).shouldBe(exist);
             return Integer.parseInt($(CART_BADGE).getText());
         } catch (Exception e) {
             return 0;
@@ -70,7 +73,6 @@ public class ProductsPage extends BasePage {
     @Step("Click on cart link")
     public void clickCartLink() {
         $(CART_LINK).shouldBe(visible).click();
-        // Wait for navigation to cart page to complete before returning
         webdriver().shouldHave(urlContaining("cart"));
     }
 
