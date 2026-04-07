@@ -20,9 +20,9 @@ public class BaseTest {
         Configuration.pageLoadStrategy = "normal";
         Configuration.screenshots = true;
         Configuration.savePageSource = true;
-        Configuration.headless = true;
 
         ChromeOptions options = new ChromeOptions();
+        options.addArguments("--headless=new"); // new headless mode - better keyboard support
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--disable-gpu");
@@ -30,8 +30,13 @@ public class BaseTest {
         options.addArguments("--window-size=1920,1080");
         options.addArguments("--remote-allow-origins=*");
         options.addArguments("--disable-blink-features=AutomationControlled");
+        options.addArguments("--enable-javascript");
         Configuration.browserCapabilities = options;
 
+        open(BASE_URL);
+        clearBrowserCookies();
+        executeJavaScript("window.localStorage.clear();");
+        executeJavaScript("window.sessionStorage.clear();");
         open(BASE_URL);
     }
 

@@ -7,6 +7,7 @@ import static com.codeborne.selenide.Condition.enabled;
 import static com.codeborne.selenide.Condition.text;
 import static com.codeborne.selenide.Condition.visible;
 import static com.codeborne.selenide.Selenide.$;
+import static com.codeborne.selenide.Selenide.executeJavaScript;
 import static com.codeborne.selenide.WebDriverConditions.urlContaining;
 import static com.codeborne.selenide.Selenide.webdriver;
 
@@ -45,7 +46,8 @@ public class CheckoutStepTwoPage extends BasePage {
 
     @Step("Click finish button")
     public void clickFinishButton() {
-        $(FINISH_BUTTON).shouldBe(visible).shouldBe(enabled).click();
+        var btn = $(FINISH_BUTTON).shouldBe(visible).shouldBe(enabled);
+        executeJavaScript("arguments[0].click();", btn.getWrappedElement());
     }
 
     @Step("Click cancel button")

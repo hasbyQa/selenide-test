@@ -39,7 +39,7 @@ jobs:
 
       - name: Run Selenide Tests
         id: run_tests
-        run: mvn clean test -Dselenide.headless=true -Dselenide.browser=chrome
+        run: mvn clean test -Dselenide.browser=chrome
         continue-on-error: true
 
       - name: Set test status

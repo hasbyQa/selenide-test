@@ -2,7 +2,6 @@ package com.hasbyqa.pages;
 
 import com.hasbyqa.pages.base.BasePage;
 import io.qameta.allure.Step;
-import org.openqa.selenium.JavascriptExecutor;
 
 import static com.codeborne.selenide.Condition.enabled;
 import static com.codeborne.selenide.Condition.text;
@@ -31,39 +30,36 @@ public class CheckoutStepOnePage extends BasePage {
         return this;
     }
 
-    /**
-     * Sets a value on a React-controlled input using JS to trigger
-     * React's synthetic onChange event, then fires a native input event
-     * so React registers the change before form submission.
-     */
-    private void setReactInputValue(String selector, String value) {
+    private void fillReactField(String selector, String value) {
         var element = $(selector).shouldBe(visible).shouldBe(enabled);
-        // Use JS to set the value and fire input + change events React listens to
+        // Set value via JS native setter to bypass React's synthetic event wrapper
         executeJavaScript(
                 "var el = arguments[0];" +
-                        "var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;" +
-                        "nativeInputValueSetter.call(el, arguments[1]);" +
-                        "el.dispatchEvent(new Event('input', { bubbles: true }));" +
-                        "el.dispatchEvent(new Event('change', { bubbles: true }));",
+                        "var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;" +
+                        "setter.call(el, arguments[1]);" +
+                        "el.dispatchEvent(new Event('focus', {bubbles: true}));" +
+                        "el.dispatchEvent(new Event('input', {bubbles: true}));" +
+                        "el.dispatchEvent(new Event('change', {bubbles: true}));" +
+                        "el.dispatchEvent(new Event('blur', {bubbles: true}));",
                 element.getWrappedElement(), value
         );
     }
 
     @Step("Enter first name: {firstName}")
     public CheckoutStepOnePage enterFirstName(String firstName) {
-        setReactInputValue(FIRST_NAME_FIELD, firstName);
+        fillReactField(FIRST_NAME_FIELD, firstName);
         return this;
     }
 
     @Step("Enter last name: {lastName}")
     public CheckoutStepOnePage enterLastName(String lastName) {
-        setReactInputValue(LAST_NAME_FIELD, lastName);
+        fillReactField(LAST_NAME_FIELD, lastName);
         return this;
     }
 
     @Step("Enter postal code: {postalCode}")
     public CheckoutStepOnePage enterPostalCode(String postalCode) {
-        setReactInputValue(POSTAL_CODE_FIELD, postalCode);
+        fillReactField(POSTAL_CODE_FIELD, postalCode);
         return this;
     }
 
