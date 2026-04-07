@@ -43,7 +43,6 @@ public class ProductsPage extends BasePage {
 
     @Step("Get product price by index {index}")
     public String getProductPriceByIndex(int index) {
-        // index is 1-based
         return $$(PRODUCT_ITEM).get(index - 1).$(PRODUCT_PRICE).getText();
     }
 
@@ -55,7 +54,6 @@ public class ProductsPage extends BasePage {
 
     @Step("Click add to cart button for product at index {index}")
     public ProductsPage addProductToCartByIndex(int index) {
-        // index is 1-based — get add-to-cart button from the specific inventory item
         $$(PRODUCT_ITEM).get(index - 1).$(ADD_TO_CART_BUTTON).shouldBe(visible).click();
         return this;
     }
@@ -72,6 +70,8 @@ public class ProductsPage extends BasePage {
     @Step("Click on cart link")
     public void clickCartLink() {
         $(CART_LINK).shouldBe(visible).click();
+        // Wait for navigation to cart page to complete before returning
+        webdriver().shouldHave(urlContaining("cart"));
     }
 
     @Step("Click on product name {productName}")
