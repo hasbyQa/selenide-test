@@ -57,11 +57,12 @@ jobs:
             echo "header_color=#dc3545" >> $GITHUB_OUTPUT
           fi
 
-      - name: Parse test results
+      - name: Parse test results and failures
         id: parse_results
         if: always()
         run: |
           TOTAL=0; PASSED=0; FAILED=0; SKIPPED=0
+          FAILURE_DETAILS=""
           for f in target/surefire-reports/TEST-*.xml; do
             [ -f "$f" ] || continue
             t=$(grep -oP 'tests="\K[0-9]+' "$f" | head -1)
@@ -71,12 +72,44 @@ jobs:
             TOTAL=$((TOTAL + ${t:-0}))
             FAILED=$((FAILED + ${fa:-0} + ${e:-0}))
             SKIPPED=$((SKIPPED + ${s:-0}))
+
+            # Extract failure details from each failed test
+            while IFS= read -r line; do
+              TEST_NAME=$(echo "$line" | grep -oP 'name="\K[^"]+')
+              CLASS_NAME=$(echo "$line" | grep -oP 'classname="\K[^"]+')
+              if [ -n "$TEST_NAME" ]; then
+                # Get failure message for this test
+                FAILURE_MSG=$(python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('$f')
+          root = tree.getroot()
+          for tc in root.findall('testcase'):
+              if tc.get('name') == '''$TEST_NAME''':
+                  f = tc.find('failure')
+                  e = tc.find('error')
+                  el = f if f is not None else e
+                  if el is not None:
+                      msg = el.get('message', '')
+                      print(msg[:300])
+          " 2>/dev/null || echo "")
+                if [ -n "$FAILURE_MSG" ]; then
+                  SHORT_CLASS=$(echo "$CLASS_NAME" | sed 's/.*\.//')
+                  FAILURE_DETAILS="${FAILURE_DETAILS}• ${SHORT_CLASS}.${TEST_NAME}: ${FAILURE_MSG}\n"
+                fi
+              fi
+            done < <(grep '<testcase' "$f")
           done
           PASSED=$((TOTAL - FAILED - SKIPPED))
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
           echo "failed=$FAILED" >> $GITHUB_OUTPUT
           echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
+
+          # Save failure details to file to avoid multiline issues in env
+          echo -e "$FAILURE_DETAILS" > /tmp/failure_details.txt
+          # Also create a safe single-line version for Slack
+          SLACK_FAILURES=$(echo -e "$FAILURE_DETAILS" | head -5 | tr '\n' '|' | sed 's/|$//')
+          echo "slack_failures=$SLACK_FAILURES" >> $GITHUB_OUTPUT
 
       - name: Generate Allure Report
         if: always()
@@ -98,15 +131,11 @@ jobs:
         run: |
           if [ -f "target/site/allure-maven-plugin/index.html" ]; then
             echo "path=target/site/allure-maven-plugin" >> $GITHUB_OUTPUT
-            echo "Found at target/site/allure-maven-plugin"
           elif [ -f "target/site/allure-report/index.html" ]; then
             echo "path=target/site/allure-report" >> $GITHUB_OUTPUT
-            echo "Found at target/site/allure-report"
           elif [ -f "target/allure-report/index.html" ]; then
             echo "path=target/allure-report" >> $GITHUB_OUTPUT
-            echo "Found at target/allure-report"
           else
-            echo "Allure index.html not found, creating fallback"
             mkdir -p target/allure-fallback
             python3 -c "
           content = '''<html><body style=\"font-family:Arial;text-align:center;padding:50px\">
@@ -215,6 +244,11 @@ jobs:
                       "short": false
                     },
                     {
+                      "title": "🐛 Failed Tests",
+                      "value": "${{ steps.parse_results.outputs.slack_failures }}",
+                      "short": false
+                    },
+                    {
                       "title": "🏃 Pipeline Run",
                       "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
                       "short": false
@@ -233,6 +267,20 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Read failure details for email
+        if: always()
+        id: failure_file
+        run: |
+          if [ -f /tmp/failure_details.txt ] && [ -s /tmp/failure_details.txt ]; then
+            # Convert to HTML list items
+            FAILURES_HTML=$(cat /tmp/failure_details.txt | grep -v '^$' | while IFS= read -r line; do
+              echo "<li style='margin-bottom:8px;color:#dc3545;'>${line}</li>"
+            done | tr -d '\n')
+            echo "failures_html=$FAILURES_HTML" >> $GITHUB_OUTPUT
+          else
+            echo "failures_html=<li style='color:#28a745;'>All tests passed successfully</li>" >> $GITHUB_OUTPUT
+          fi
 
       - name: Gmail Notification
         if: always()
@@ -282,6 +330,14 @@ jobs:
                     </td>
                   </tr>
                 </table>
+
+                <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">🐛 Failed Test Details</h3>
+                <div style="background: #fff8f8; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 0 6px 6px 0; margin-bottom: 20px;">
+                  <ul style="margin: 0; padding-left: 16px;">
+                    ${{ steps.failure_file.outputs.failures_html }}
+                  </ul>
+                </div>
+
                 <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">📋 Pipeline Details</h3>
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                   <tr style="border-bottom: 1px solid #eee;">
@@ -305,6 +361,7 @@ jobs:
                     <td style="padding: 10px;">${{ github.event.head_commit.message }}</td>
                   </tr>
                 </table>
+
                 <div style="margin-top: 24px; text-align: center;">
                   <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                      style="background-color: #0366d6; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin: 6px;">
