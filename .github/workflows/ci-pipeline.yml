@@ -57,12 +57,11 @@ jobs:
             echo "header_color=#dc3545" >> $GITHUB_OUTPUT
           fi
 
-      - name: Parse test results and failures
+      - name: Parse test results and extract failures
         id: parse_results
         if: always()
         run: |
           TOTAL=0; PASSED=0; FAILED=0; SKIPPED=0
-          FAILURE_DETAILS=""
           for f in target/surefire-reports/TEST-*.xml; do
             [ -f "$f" ] || continue
             t=$(grep -oP 'tests="\K[0-9]+' "$f" | head -1)
@@ -72,32 +71,6 @@ jobs:
             TOTAL=$((TOTAL + ${t:-0}))
             FAILED=$((FAILED + ${fa:-0} + ${e:-0}))
             SKIPPED=$((SKIPPED + ${s:-0}))
-
-            # Extract failure details from each failed test
-            while IFS= read -r line; do
-              TEST_NAME=$(echo "$line" | grep -oP 'name="\K[^"]+')
-              CLASS_NAME=$(echo "$line" | grep -oP 'classname="\K[^"]+')
-              if [ -n "$TEST_NAME" ]; then
-                # Get failure message for this test
-                FAILURE_MSG=$(python3 -c "
-          import xml.etree.ElementTree as ET
-          tree = ET.parse('$f')
-          root = tree.getroot()
-          for tc in root.findall('testcase'):
-              if tc.get('name') == '''$TEST_NAME''':
-                  f = tc.find('failure')
-                  e = tc.find('error')
-                  el = f if f is not None else e
-                  if el is not None:
-                      msg = el.get('message', '')
-                      print(msg[:300])
-          " 2>/dev/null || echo "")
-                if [ -n "$FAILURE_MSG" ]; then
-                  SHORT_CLASS=$(echo "$CLASS_NAME" | sed 's/.*\.//')
-                  FAILURE_DETAILS="${FAILURE_DETAILS}• ${SHORT_CLASS}.${TEST_NAME}: ${FAILURE_MSG}\n"
-                fi
-              fi
-            done < <(grep '<testcase' "$f")
           done
           PASSED=$((TOTAL - FAILED - SKIPPED))
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
@@ -105,25 +78,72 @@ jobs:
           echo "failed=$FAILED" >> $GITHUB_OUTPUT
           echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
 
-          # Save failure details to file to avoid multiline issues in env
-          echo -e "$FAILURE_DETAILS" > /tmp/failure_details.txt
-          # Also create a safe single-line version for Slack
-          SLACK_FAILURES=$(echo -e "$FAILURE_DETAILS" | head -5 | tr '\n' '|' | sed 's/|$//')
-          echo "slack_failures=$SLACK_FAILURES" >> $GITHUB_OUTPUT
+          # Extract failure details using grep on surefire txt reports
+          FAILURE_LINES=""
+          for f in target/surefire-reports/*.txt; do
+            [ -f "$f" ] || continue
+            # Get lines with FAILURE and the message after it
+            while IFS= read -r line; do
+              if echo "$line" | grep -q "<<<"; then
+                TEST=$(echo "$line" | grep -oP '\S+(?=\s+Time elapsed)')
+                FAILURE_LINES="${FAILURE_LINES}${TEST}\n"
+              fi
+            done < "$f"
+            # Get the failure message
+            MSG=$(grep -A2 "AssertionFailedError\|AssertionError" "$f" | grep -v "^--$" | head -3 | tr '\n' ' ' | cut -c1-200)
+            if [ -n "$MSG" ]; then
+              FAILURE_LINES="${FAILURE_LINES}  → ${MSG}\n"
+            fi
+          done
+
+          if [ -z "$FAILURE_LINES" ]; then
+            FAILURE_LINES="No failures"
+          fi
+
+          # Write to file
+          printf "%b" "$FAILURE_LINES" > /tmp/failures.txt
+          cat /tmp/failures.txt
+
+          # Single line for Slack (pipe separated)
+          SLACK_LINE=$(printf "%b" "$FAILURE_LINES" | tr '\n' ' ' | cut -c1-500)
+          echo "slack_failures=$SLACK_LINE" >> $GITHUB_OUTPUT
+
+      - name: Build failure HTML for email
+        id: failure_html
+        if: always()
+        run: |
+          HTML=""
+          for f in target/surefire-reports/*.txt; do
+            [ -f "$f" ] || continue
+            # Get failed test names
+            while IFS= read -r line; do
+              if echo "$line" | grep -q "FAILURE\|ERROR" && echo "$line" | grep -q "<<<"; then
+                TEST=$(echo "$line" | grep -oP '\S+(?=\s+Time elapsed)' | head -1)
+                if [ -n "$TEST" ]; then
+                  # Get assertion message - look for expected/actual in the file
+                  MSG=$(grep -A5 "$TEST" "$f" | grep -i "expected\|BUG\|assert\|actual" | head -2 | tr '\n' ' ' | cut -c1-300)
+                  if [ -z "$MSG" ]; then
+                    MSG=$(grep -A10 "FAILURES\|ERRORS" "$f" | grep -v "^$" | head -3 | tr '\n' ' ' | cut -c1-300)
+                  fi
+                  HTML="${HTML}<li style='margin-bottom:10px;'><strong style='color:#dc3545;'>${TEST}</strong><br/><span style='color:#666;font-size:13px;'>${MSG}</span></li>"
+                fi
+              fi
+            done < "$f"
+          done
+
+          if [ -z "$HTML" ]; then
+            HTML="<li style='color:#28a745;'>All tests passed successfully ✅</li>"
+          fi
+
+          # Save to file to handle special chars
+          echo "$HTML" > /tmp/failures.html
+          # Use base64 to pass safely
+          ENCODED=$(base64 -w 0 /tmp/failures.html)
+          echo "encoded=$ENCODED" >> $GITHUB_OUTPUT
 
       - name: Generate Allure Report
         if: always()
         run: mvn allure:report || echo "Allure report generation completed"
-
-      - name: Debug - Find Allure Report
-        if: always()
-        run: |
-          echo "=== Searching for index.html ==="
-          find target -name "index.html" 2>/dev/null || echo "No index.html found"
-          echo "=== target/site/allure-maven-plugin contents ==="
-          ls -la target/site/allure-maven-plugin/ 2>/dev/null || echo "folder empty or missing"
-          echo "=== Allure results ==="
-          ls -la target/allure-results/ 2>/dev/null || echo "No allure-results folder"
 
       - name: Locate and prepare Allure Report
         if: always()
@@ -140,7 +160,6 @@ jobs:
             python3 -c "
           content = '''<html><body style=\"font-family:Arial;text-align:center;padding:50px\">
           <h2>Allure report generation failed</h2>
-          <p>Please check the pipeline logs for details.</p>
           </body></html>'''
           with open('target/allure-fallback/index.html', 'w') as f:
               f.write(content)
@@ -187,6 +206,16 @@ jobs:
           retention-days: 10
           if-no-files-found: ignore
 
+      - name: Decode failure details
+        if: always()
+        id: decode
+        run: |
+          echo "${{ steps.failure_html.outputs.encoded }}" | base64 -d > /tmp/decoded_failures.html
+          FAILURES=$(cat /tmp/decoded_failures.html)
+          echo "failures<<HTMLEOF" >> $GITHUB_OUTPUT
+          echo "$FAILURES" >> $GITHUB_OUTPUT
+          echo "HTMLEOF" >> $GITHUB_OUTPUT
+
       - name: Slack Notification
         if: always()
         uses: slackapi/slack-github-action@v1.27.0
@@ -198,89 +227,26 @@ jobs:
                 {
                   "color": "${{ steps.test_status.outputs.color }}",
                   "fields": [
-                    {
-                      "title": "📁 Repository",
-                      "value": "${{ github.repository }}",
-                      "short": true
-                    },
-                    {
-                      "title": "🌿 Branch",
-                      "value": "${{ github.ref_name }}",
-                      "short": true
-                    },
-                    {
-                      "title": "👤 Triggered by",
-                      "value": "${{ github.actor }}",
-                      "short": true
-                    },
-                    {
-                      "title": "🔢 Run #",
-                      "value": "${{ github.run_number }}",
-                      "short": true
-                    },
-                    {
-                      "title": "✅ Passed",
-                      "value": "${{ steps.parse_results.outputs.passed }}",
-                      "short": true
-                    },
-                    {
-                      "title": "❌ Failed",
-                      "value": "${{ steps.parse_results.outputs.failed }}",
-                      "short": true
-                    },
-                    {
-                      "title": "⏭️ Skipped",
-                      "value": "${{ steps.parse_results.outputs.skipped }}",
-                      "short": true
-                    },
-                    {
-                      "title": "🧪 Total Tests",
-                      "value": "${{ steps.parse_results.outputs.total }}",
-                      "short": true
-                    },
-                    {
-                      "title": "📝 Commit Message",
-                      "value": "${{ github.event.head_commit.message }}",
-                      "short": false
-                    },
-                    {
-                      "title": "🐛 Failed Tests",
-                      "value": "${{ steps.parse_results.outputs.slack_failures }}",
-                      "short": false
-                    },
-                    {
-                      "title": "🏃 Pipeline Run",
-                      "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                      "short": false
-                    },
-                    {
-                      "title": "📊 Live Allure Report",
-                      "value": "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/",
-                      "short": false
-                    }
+                    {"title": "📁 Repository", "value": "${{ github.repository }}", "short": true},
+                    {"title": "🌿 Branch", "value": "${{ github.ref_name }}", "short": true},
+                    {"title": "👤 Triggered by", "value": "${{ github.actor }}", "short": true},
+                    {"title": "🔢 Run #", "value": "${{ github.run_number }}", "short": true},
+                    {"title": "✅ Passed", "value": "${{ steps.parse_results.outputs.passed }}", "short": true},
+                    {"title": "❌ Failed", "value": "${{ steps.parse_results.outputs.failed }}", "short": true},
+                    {"title": "⏭️ Skipped", "value": "${{ steps.parse_results.outputs.skipped }}", "short": true},
+                    {"title": "🧪 Total", "value": "${{ steps.parse_results.outputs.total }}", "short": true},
+                    {"title": "📝 Commit", "value": "${{ github.event.head_commit.message }}", "short": false},
+                    {"title": "🐛 Failed Tests", "value": "${{ steps.parse_results.outputs.slack_failures }}", "short": false},
+                    {"title": "🏃 Pipeline Run", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false},
+                    {"title": "📊 Allure Report", "value": "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/", "short": false}
                   ],
-                  "footer": "Selenide CI • GitHub Actions",
-                  "footer_icon": "https://github.githubassets.com/favicons/favicon.png"
+                  "footer": "Selenide CI • GitHub Actions"
                 }
               ]
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
-
-      - name: Read failure details for email
-        if: always()
-        id: failure_file
-        run: |
-          if [ -f /tmp/failure_details.txt ] && [ -s /tmp/failure_details.txt ]; then
-            # Convert to HTML list items
-            FAILURES_HTML=$(cat /tmp/failure_details.txt | grep -v '^$' | while IFS= read -r line; do
-              echo "<li style='margin-bottom:8px;color:#dc3545;'>${line}</li>"
-            done | tr -d '\n')
-            echo "failures_html=$FAILURES_HTML" >> $GITHUB_OUTPUT
-          else
-            echo "failures_html=<li style='color:#28a745;'>All tests passed successfully</li>" >> $GITHUB_OUTPUT
-          fi
 
       - name: Gmail Notification
         if: always()
@@ -298,12 +264,8 @@ jobs:
             <html>
             <body style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
               <div style="background-color: ${{ steps.test_status.outputs.header_color }}; color: white; padding: 24px 20px; border-radius: 8px 8px 0 0; text-align: center;">
-                <h1 style="margin:0; font-size: 26px; letter-spacing: 1px;">
-                  ${{ steps.test_status.outputs.emoji }} Selenide CI Report
-                </h1>
-                <p style="margin: 8px 0 0 0; font-size: 16px; opacity: 0.9;">
-                  Tests ${{ steps.test_status.outputs.status }} — Run #${{ github.run_number }}
-                </p>
+                <h1 style="margin:0; font-size: 26px;">${{ steps.test_status.outputs.emoji }} Selenide CI Report</h1>
+                <p style="margin: 8px 0 0 0; font-size: 16px; opacity: 0.9;">Tests ${{ steps.test_status.outputs.status }} — Run #${{ github.run_number }}</p>
               </div>
               <div style="background: white; border: 1px solid #ddd; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
                 <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">🧪 Test Results Summary</h3>
@@ -334,7 +296,7 @@ jobs:
                 <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">🐛 Failed Test Details</h3>
                 <div style="background: #fff8f8; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 0 6px 6px 0; margin-bottom: 20px;">
                   <ul style="margin: 0; padding-left: 16px;">
-                    ${{ steps.failure_file.outputs.failures_html }}
+                    ${{ steps.decode.outputs.failures }}
                   </ul>
                 </div>
 
