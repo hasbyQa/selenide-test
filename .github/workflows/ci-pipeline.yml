@@ -57,7 +57,7 @@ jobs:
             echo "header_color=#dc3545" >> $GITHUB_OUTPUT
           fi
 
-      - name: Parse test results and extract failures
+      - name: Parse test results
         id: parse_results
         if: always()
         run: |
@@ -78,55 +78,56 @@ jobs:
           echo "failed=$FAILED" >> $GITHUB_OUTPUT
           echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
 
-          # Extract failures cleanly using Python
-          python3 << 'PYEOF' > /tmp/failures.json
+          # Parse failures into clean outputs using Python
+          python3 << 'PYEOF'
           import xml.etree.ElementTree as ET
-          import json, os, glob
+          import json, glob, os
 
           failures = []
-          for path in glob.glob("target/surefire-reports/TEST-*.xml"):
-              tree = ET.parse(path)
-              for tc in tree.getroot().findall("testcase"):
-                  for tag in ["failure", "error"]:
-                      el = tc.find(tag)
-                      if el is not None:
-                          name = tc.get("name", "")
-                          msg = el.get("message", "No message")[:250]
-                          failures.append({"name": name, "message": msg})
+          for path in sorted(glob.glob("target/surefire-reports/TEST-*.xml")):
+              try:
+                  tree = ET.parse(path)
+                  for tc in tree.getroot().findall("testcase"):
+                      for tag in ["failure", "error"]:
+                          el = tc.find(tag)
+                          if el is not None:
+                              name = tc.get("name", "unknown")
+                              msg = (el.get("message") or "No message").replace('"', "'").replace('\n', ' ').strip()
+                              msg = msg[:200]
+                              failures.append({"name": name, "message": msg})
+              except:
+                  pass
 
-          print(json.dumps(failures))
+          # Write Slack text (one line per failure, safe for JSON)
+          if failures:
+              slack_text = " | ".join([f["name"] + ": " + f["message"] for f in failures])
+          else:
+              slack_text = "None - all tests passed ✅"
+
+          # Write HTML for email
+          if failures:
+              html_items = ""
+              for f in failures:
+                  html_items += f'<li style="margin-bottom:10px;"><strong style="color:#dc3545;">{f["name"]}</strong><br/><span style="color:#555;font-size:13px;">{f["message"]}</span></li>'
+          else:
+              html_items = '<li style="color:#28a745;">All tests passed successfully ✅</li>'
+
+          # Write to files
+          with open("/tmp/slack_failures.txt", "w") as f:
+              f.write(slack_text)
+          with open("/tmp/html_failures.txt", "w") as f:
+              f.write(html_items)
+
+          print("Done parsing failures")
           PYEOF
 
-          echo "failures_json=$(cat /tmp/failures.json)" >> $GITHUB_OUTPUT
+          # Read into outputs safely
+          SLACK_TEXT=$(cat /tmp/slack_failures.txt)
+          echo "slack_failures=$SLACK_TEXT" >> $GITHUB_OUTPUT
 
-          # Build Slack text
-          SLACK_TEXT=$(python3 -c "
-          import json, sys
-          data = json.load(open('/tmp/failures.json'))
-          if not data:
-              print('None - all tests passed')
-          else:
-              lines = []
-              for f in data:
-                  lines.append(f['name'] + ': ' + f['message'])
-              print('\n'.join(lines))
-          ")
-          echo "slack_failures<<SLACKEOF" >> $GITHUB_OUTPUT
-          echo "$SLACK_TEXT" >> $GITHUB_OUTPUT
-          echo "SLACKEOF" >> $GITHUB_OUTPUT
-
-          # Build HTML for email
-          HTML=$(python3 -c "
-          import json
-          data = json.load(open('/tmp/failures.json'))
-          if not data:
-              print('<li style=\"color:#28a745;\">All tests passed successfully ✅</li>')
-          else:
-              for f in data:
-                  print('<li style=\"margin-bottom:12px;\"><strong style=\"color:#dc3545;\">' + f['name'] + '</strong><br/><span style=\"color:#555;font-size:13px;font-family:monospace;\">' + f['message'] + '</span></li>')
-          ")
+          HTML_TEXT=$(cat /tmp/html_failures.txt)
           echo "failures_html<<HTMLEOF" >> $GITHUB_OUTPUT
-          echo "$HTML" >> $GITHUB_OUTPUT
+          echo "$HTML_TEXT" >> $GITHUB_OUTPUT
           echo "HTMLEOF" >> $GITHUB_OUTPUT
 
       - name: Generate Allure Report
@@ -197,25 +198,25 @@ jobs:
         with:
           payload: |
             {
-              "text": "${{ steps.test_status.outputs.emoji }} *Selenide CI — Tests ${{ steps.test_status.outputs.status }}*",
+              "text": "${{ steps.test_status.outputs.emoji }} *Selenide CI \u2014 Tests ${{ steps.test_status.outputs.status }}*",
               "attachments": [
                 {
                   "color": "${{ steps.test_status.outputs.color }}",
                   "fields": [
-                    {"title": "📁 Repository", "value": "${{ github.repository }}", "short": true},
-                    {"title": "🌿 Branch", "value": "${{ github.ref_name }}", "short": true},
-                    {"title": "👤 Triggered by", "value": "${{ github.actor }}", "short": true},
-                    {"title": "🔢 Run #", "value": "${{ github.run_number }}", "short": true},
-                    {"title": "✅ Passed", "value": "${{ steps.parse_results.outputs.passed }}", "short": true},
-                    {"title": "❌ Failed", "value": "${{ steps.parse_results.outputs.failed }}", "short": true},
-                    {"title": "⏭️ Skipped", "value": "${{ steps.parse_results.outputs.skipped }}", "short": true},
-                    {"title": "🧪 Total", "value": "${{ steps.parse_results.outputs.total }}", "short": true},
-                    {"title": "📝 Commit", "value": "${{ github.event.head_commit.message }}", "short": false},
-                    {"title": "🐛 Failed Tests", "value": "${{ steps.parse_results.outputs.slack_failures }}", "short": false},
-                    {"title": "🏃 Pipeline Run", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false},
-                    {"title": "📊 Allure Report", "value": "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/", "short": false}
+                    {"title": "\ud83d\udcc1 Repository", "value": "${{ github.repository }}", "short": true},
+                    {"title": "\ud83c\udf3f Branch", "value": "${{ github.ref_name }}", "short": true},
+                    {"title": "\ud83d\udc64 Triggered by", "value": "${{ github.actor }}", "short": true},
+                    {"title": "\ud83d\udd22 Run #", "value": "${{ github.run_number }}", "short": true},
+                    {"title": "\u2705 Passed", "value": "${{ steps.parse_results.outputs.passed }}", "short": true},
+                    {"title": "\u274c Failed", "value": "${{ steps.parse_results.outputs.failed }}", "short": true},
+                    {"title": "\u23ed\ufe0f Skipped", "value": "${{ steps.parse_results.outputs.skipped }}", "short": true},
+                    {"title": "\ud83e\uddea Total", "value": "${{ steps.parse_results.outputs.total }}", "short": true},
+                    {"title": "\ud83d\udcdd Commit", "value": "${{ github.event.head_commit.message }}", "short": false},
+                    {"title": "\ud83d\udc1b Failed Tests", "value": "${{ steps.parse_results.outputs.slack_failures }}", "short": false},
+                    {"title": "\ud83c\udfc3 Pipeline Run", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false},
+                    {"title": "\ud83d\udcca Allure Report", "value": "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/", "short": false}
                   ],
-                  "footer": "Selenide CI • GitHub Actions"
+                  "footer": "Selenide CI \u2022 GitHub Actions"
                 }
               ]
             }
@@ -267,14 +268,12 @@ jobs:
                     </td>
                   </tr>
                 </table>
-
                 <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">🐛 Failed Test Details</h3>
                 <div style="background: #fff8f8; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 0 6px 6px 0; margin-bottom: 20px;">
                   <ul style="margin: 0; padding-left: 16px;">
                     ${{ steps.parse_results.outputs.failures_html }}
                   </ul>
                 </div>
-
                 <h3 style="margin: 0 0 12px 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 8px;">📋 Pipeline Details</h3>
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                   <tr style="border-bottom: 1px solid #eee;">
@@ -298,7 +297,6 @@ jobs:
                     <td style="padding: 10px;">${{ github.event.head_commit.message }}</td>
                   </tr>
                 </table>
-
                 <div style="margin-top: 24px; text-align: center;">
                   <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                      style="background-color: #0366d6; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin: 6px;">
