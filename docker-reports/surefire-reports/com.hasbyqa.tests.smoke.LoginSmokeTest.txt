@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.hasbyqa.tests.smoke.LoginSmokeTest
+-------------------------------------------------------------------------------
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 149.91 s - in com.hasbyqa.tests.smoke.LoginSmokeTest

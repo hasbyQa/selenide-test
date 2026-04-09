@@ -1,0 +1,1 @@
+{"total":2,"items":[{"uid":"f7bec07192d91323d645f8e7b9ad1c8c","name":"com.hasbyqa.tests.regression.CartCheckoutRegressionTest","statistic":{"failed":0,"broken":0,"skipped":0,"passed":6,"unknown":0,"total":6}},{"uid":"c8d06048d2b5099081cc6854532e85b7","name":"com.hasbyqa.tests.smoke.LoginSmokeTest","statistic":{"failed":0,"broken":0,"skipped":0,"passed":5,"unknown":0,"total":5}}]}

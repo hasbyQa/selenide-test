@@ -1,0 +1,7 @@
+com/hasbyqa/pages/ProductsPage.class
+com/hasbyqa/pages/CheckoutCompletePage.class
+com/hasbyqa/pages/CheckoutStepTwoPage.class
+com/hasbyqa/pages/LoginPage.class
+com/hasbyqa/pages/base/BasePage.class
+com/hasbyqa/pages/CartPage.class
+com/hasbyqa/pages/CheckoutStepOnePage.class

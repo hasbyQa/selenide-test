@@ -1,23 +1,24 @@
-# Use official Maven image with OpenJDK 11
-FROM maven:3.8.1-openjdk-11
+FROM maven:3.8.6-openjdk-11-slim
 
-# Set working directory
+# Install Chrome
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    --no-install-recommends \
+    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
+    >> /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy pom.xml
+# Cache dependencies
 COPY pom.xml .
+RUN mvn dependency:go-offline -q
 
-# Download dependencies
-RUN mvn dependency:resolve
+COPY src ./src
 
-# Copy project files
-COPY . .
-
-# Build the project
-RUN mvn clean package -DskipTests
-
-# Install Allure CLI for report generation
-RUN apt-get update && apt-get install -y npm && npm install -g allure-commandline
-
-# Run tests and generate Allure report
-CMD ["sh", "-c", "mvn clean test && mvn allure:report"]
+# Use 'test' instead of 'clean test' to avoid deleting mounted volume
+CMD ["sh", "-c", "mvn test -Dselenide.browser=chrome -q && mvn allure:report -q && echo 'Done! Report at /app/target/site/allure-maven-plugin'"]

@@ -1,0 +1,5 @@
+/app/src/test/java/com/hasbyqa/tests/base/BaseTest.java
+/app/src/test/java/com/hasbyqa/utils/TestData.java
+/app/src/test/java/com/hasbyqa/tests/smoke/LoginSmokeTest.java
+/app/src/test/java/com/hasbyqa/tests/base/AllureScreenshotExtension.java
+/app/src/test/java/com/hasbyqa/tests/regression/CartCheckoutRegressionTest.java

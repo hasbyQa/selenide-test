@@ -1,0 +1,5 @@
+com/hasbyqa/tests/smoke/LoginSmokeTest.class
+com/hasbyqa/tests/base/AllureScreenshotExtension.class
+com/hasbyqa/utils/TestData.class
+com/hasbyqa/tests/regression/CartCheckoutRegressionTest.class
+com/hasbyqa/tests/base/BaseTest.class
